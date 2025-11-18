@@ -1,0 +1,97 @@
+name: "Reusable Terraform Pipeline (OIDC)"
+
+on:
+  workflow_call:
+    inputs:
+      terraform_dir:
+        description: "Ścieżka do katalogu z Terraformem"
+        required: false
+        type: string
+        default: "."
+      terraform_version:
+        required: false
+        type: string
+        default: "1.9.8"
+      aws_region:
+        required: false
+        type: string
+        default: "eu-central-1"
+      working_branch:
+        description: "Nazwa brancha na którym robimy apply (domyślnie main/master)"
+        required: false
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write          # potrzebne do OIDC
+  issues: write            # do komentowania planu na PR
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    # Żadnego environment: tutaj – wszystko sterowane ręcznie
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsTerraformRole
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: github-ci-${{ github.run_id }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform init \
+            -backend-config="bucket=my-company-terraform-state" \
+            -backend-config="key=${{ github.repository }}/${{ github.ref_name }}/terraform.tfstate"
+
+      - name: Terraform Format & Validate
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform fmt -check
+          terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform plan -no-color -input=false -out=plan.tfplan
+          terraform show -json plan.tfplan > plan.json
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: ${{ inputs.terraform_dir }}/plan.json
+
+      - name: Comment plan on Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const plan = require('fs').readFileSync('${{ inputs.terraform_dir }}/plan.json', 'utf8');
+            const output = `**Terraform Plan** (${{ inputs.aws_region }})\n\`\`\`diff\n${plan.substring(0, 65000)}\n\`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Terraform Apply
+        if: github.ref_name == inputs.working_branch
+        working-directory: ${{ inputs.terraform_dir }}
+        run: terraform apply -auto-approve plan.tfplan
