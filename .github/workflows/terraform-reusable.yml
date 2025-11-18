@@ -25,13 +25,12 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write          # potrzebne do OIDC
-  issues: write            # do komentowania planu na PR
+  id-token: write          
+  issues: write            
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
-    # Żadnego environment: tutaj – wszystko sterowane ręcznie
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
