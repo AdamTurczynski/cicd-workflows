@@ -1,4 +1,4 @@
-name: "Reusable Terraform Pipeline (OIDC)"
+name: "Reusable Terraform Pipeline"
 
 on:
   workflow_call:
