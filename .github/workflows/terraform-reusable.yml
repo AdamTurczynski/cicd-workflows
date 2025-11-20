@@ -54,7 +54,7 @@ jobs:
         working-directory: ${{ inputs.terraform_dir }}
         run: |
           terraform init \
-            -backend-config="bucket=my-company-terraform-state" \
+            -backend-config="bucket=my-company-terraform-state-adamt" \
             -backend-config="key=${{ github.repository }}/${{ github.ref_name }}/terraform.tfstate"
 
       - name: Terraform Format & Validate
